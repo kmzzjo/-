@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2 } from 'lucide-react';
+import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2, Undo2 } from 'lucide-react';
 import { orgData as initialOrgData, OrgNode } from './data/orgChart';
 import { OrgChartTree } from './components/OrgChartTree';
 
@@ -9,6 +9,34 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [orgData, setOrgData] = useState<OrgNode>(initialOrgData);
+  const [history, setHistory] = useState<OrgNode[]>([]);
+
+  const saveHistory = (currentData: OrgNode) => {
+    setHistory(prev => [...prev, JSON.parse(JSON.stringify(currentData))]);
+  };
+
+  const handleUndo = React.useCallback(() => {
+    setHistory(prev => {
+      if (prev.length === 0) return prev;
+      const newHistory = [...prev];
+      const previousState = newHistory.pop();
+      if (previousState) {
+        setOrgData(previousState);
+      }
+      return newHistory;
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo]);
 
   // Helper to count total nodes
   const countNodes = (node: OrgNode): number => {
@@ -24,6 +52,7 @@ export default function App() {
   const totalDepartments = countNodes(orgData);
 
   const handleNodeMove = (draggedId: string, targetId: string) => {
+    saveHistory(orgData);
     const newOrgData = JSON.parse(JSON.stringify(orgData));
     
     // Check if target is a descendant of dragged node
@@ -92,13 +121,15 @@ export default function App() {
     setOrgData(newOrgData);
   };
 
-  const handleNodeEdit = (id: string, name: string, head: string) => {
+  const handleNodeEdit = (id: string, name: string, head: string, color: string) => {
+    saveHistory(orgData);
     const newOrgData = JSON.parse(JSON.stringify(orgData));
     
     const editNode = (node: OrgNode, id: string): boolean => {
       if (node.id === id) {
         node.name = name;
         node.head = head;
+        node.color = color as any;
         return true;
       }
       if (!node.children) return false;
@@ -109,6 +140,58 @@ export default function App() {
     };
     
     editNode(newOrgData, id);
+    setOrgData(newOrgData);
+  };
+
+  const handleNodeAdd = (parentId: string) => {
+    saveHistory(orgData);
+    const newOrgData = JSON.parse(JSON.stringify(orgData));
+    
+    const addNode = (node: OrgNode): boolean => {
+      if (node.id === parentId) {
+        if (!node.children) node.children = [];
+        node.children.push({
+          id: `node-${Date.now()}`,
+          name: '새 조직',
+          head: '',
+          color: 'white',
+          children: []
+        });
+        return true;
+      }
+      if (!node.children) return false;
+      for (const child of node.children) {
+        if (addNode(child)) return true;
+      }
+      return false;
+    };
+    
+    addNode(newOrgData);
+    setOrgData(newOrgData);
+  };
+
+  const handleNodeDelete = (nodeId: string) => {
+    if (nodeId === orgData.id) {
+      alert("최상위 조직은 삭제할 수 없습니다.");
+      return;
+    }
+    saveHistory(orgData);
+    const newOrgData = JSON.parse(JSON.stringify(orgData));
+    
+    const deleteNode = (node: OrgNode): boolean => {
+      if (!node.children) return false;
+      const index = node.children.findIndex(c => c.id === nodeId);
+      if (index !== -1) {
+        node.children.splice(index, 1);
+        return true;
+      }
+      for (const child of node.children) {
+        if (deleteNode(child)) return true;
+      }
+      return false;
+    };
+    
+    deleteNode(newOrgData);
     setOrgData(newOrgData);
   };
 
@@ -159,6 +242,17 @@ export default function App() {
           </h1>
           
           <div className="flex items-center gap-4">
+            {currentView === 'orgchart' && (
+              <button 
+                onClick={handleUndo} 
+                disabled={history.length === 0}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border ${history.length > 0 ? 'border-gray-300 text-gray-700 hover:bg-gray-100' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}
+                title="실행 취소 (Ctrl+Z)"
+              >
+                <Undo2 size={16} />
+                <span className="text-sm font-medium">실행 취소</span>
+              </button>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
@@ -215,7 +309,13 @@ export default function App() {
 
           {currentView === 'orgchart' && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm min-h-full overflow-hidden">
-              <OrgChartTree data={orgData} onNodeMove={handleNodeMove} onNodeEdit={handleNodeEdit} />
+              <OrgChartTree 
+                data={orgData} 
+                onNodeMove={handleNodeMove} 
+                onNodeEdit={handleNodeEdit} 
+                onNodeAdd={handleNodeAdd}
+                onNodeDelete={handleNodeDelete}
+              />
             </div>
           )}
 

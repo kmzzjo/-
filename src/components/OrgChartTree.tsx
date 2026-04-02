@@ -4,20 +4,31 @@ import { OrgNode } from '../data/orgChart';
 interface NodeBoxProps {
   node: OrgNode;
   onMove: (draggedId: string, targetId: string) => void;
-  onEdit: (id: string, name: string, head: string) => void;
+  onEdit: (id: string, name: string, head: string, color: string) => void;
+  onAdd: (parentId: string) => void;
+  onDelete: (nodeId: string) => void;
 }
 
-const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit }) => {
+const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(node.name);
   const [head, setHead] = useState(node.head || '');
+  const [color, setColor] = useState<string>(node.color || 'white');
 
-  const bgColors = {
+  const bgColors: Record<string, string> = {
     blue: 'bg-[#1e4b82] text-white',
     yellow: 'bg-[#ffff00] text-black',
     peach: 'bg-[#fce4d6] text-black',
     gray: 'bg-[#e2e2e2] text-black',
     white: 'bg-white text-black'
+  };
+
+  const bgOnlyColors: Record<string, string> = {
+    blue: 'bg-[#1e4b82]',
+    yellow: 'bg-[#ffff00]',
+    peach: 'bg-[#fce4d6]',
+    gray: 'bg-[#e2e2e2]',
+    white: 'bg-white'
   };
 
   const bgColorClass = bgColors[node.color || 'white'];
@@ -28,6 +39,17 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit }) => {
         className="inline-block border border-black text-[11px] w-[110px] shadow-sm bg-white relative z-10 p-1"
         onMouseDown={(e) => e.stopPropagation()}
       >
+        <div className="flex gap-1 mb-1 justify-center">
+          {(['blue', 'yellow', 'peach', 'gray', 'white'] as const).map(c => (
+            <button 
+              key={c} 
+              onClick={() => setColor(c)} 
+              className={`w-4 h-4 rounded-full border border-gray-400 ${c === color ? 'ring-2 ring-black' : ''} ${bgOnlyColors[c]}`} 
+              type="button"
+              title="색상 변경"
+            />
+          ))}
+        </div>
         <input 
           value={name} 
           onChange={e => setName(e.target.value)} 
@@ -42,8 +64,8 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit }) => {
           placeholder="직책자"
         />
         <div className="flex gap-1">
-          <button onClick={() => { onEdit(node.id, name, head); setIsEditing(false); }} className="flex-1 bg-blue-500 text-white text-[10px] py-0.5 rounded">저장</button>
-          <button onClick={() => { setIsEditing(false); setName(node.name); setHead(node.head || ''); }} className="flex-1 bg-gray-300 text-black text-[10px] py-0.5 rounded">취소</button>
+          <button onClick={() => { onEdit(node.id, name, head, color); setIsEditing(false); }} className="flex-1 bg-blue-500 text-white text-[10px] py-0.5 rounded">저장</button>
+          <button onClick={() => { setIsEditing(false); setName(node.name); setHead(node.head || ''); setColor(node.color || 'white'); }} className="flex-1 bg-gray-300 text-black text-[10px] py-0.5 rounded">취소</button>
         </div>
       </div>
     );
@@ -74,9 +96,28 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit }) => {
       }}
       onDoubleClick={() => setIsEditing(true)}
       onMouseDown={(e) => e.stopPropagation()}
-      className="inline-block border border-black text-[11px] w-[110px] shadow-sm bg-white relative z-10 cursor-pointer hover:shadow-md transition-shadow"
+      className="inline-block border border-black text-[11px] w-[110px] shadow-sm bg-white relative z-10 cursor-pointer hover:shadow-md transition-shadow group"
       title="더블클릭하여 수정, 드래그하여 이동"
     >
+      {/* Hover Actions */}
+      <div className="absolute -top-2 -right-2 hidden group-hover:flex gap-1 z-20">
+        <button 
+          onClick={(e) => { e.stopPropagation(); onAdd(node.id); }} 
+          className="bg-green-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow hover:bg-green-600"
+          title="하위 조직 추가"
+        >
+          +
+        </button>
+        {node.id !== 'root' && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(node.id); }} 
+            className="bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow hover:bg-red-600"
+            title="조직 삭제"
+          >
+            ×
+          </button>
+        )}
+      </div>
       <div className={`py-1 px-1 font-bold border-b border-black flex items-center justify-center min-h-[28px] text-center leading-tight ${bgColorClass}`}>
         {node.name}
       </div>
@@ -93,29 +134,31 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit }) => {
 interface TreeNodeProps {
   node: OrgNode;
   onMove: (draggedId: string, targetId: string) => void;
-  onEdit: (id: string, name: string, head: string) => void;
+  onEdit: (id: string, name: string, head: string, color: string) => void;
+  onAdd: (parentId: string) => void;
+  onDelete: (nodeId: string) => void;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit }) => {
+const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete }) => {
   const hasChildren = node.children && node.children.length > 0;
 
   return (
     <li>
-      <NodeBox node={node} onMove={onMove} onEdit={onEdit} />
+      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} />
       {hasChildren && (
         node.stackChildren ? (
           <div className="relative pt-4">
             <div className="absolute top-0 left-1/2 w-px h-full bg-black -translate-x-1/2 z-0"></div>
             <div className="flex flex-col items-center gap-2 relative z-10">
               {node.children!.map(child => (
-                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} />
+                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} />
               ))}
             </div>
           </div>
         ) : (
           <ul>
             {node.children!.map(child => (
-              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} />
+              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} />
             ))}
           </ul>
         )
@@ -124,7 +167,19 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit }) => {
   );
 };
 
-export const OrgChartTree = ({ data, onNodeMove, onNodeEdit }: { data: OrgNode, onNodeMove: (draggedId: string, targetId: string) => void, onNodeEdit: (id: string, name: string, head: string) => void }) => {
+export const OrgChartTree = ({ 
+  data, 
+  onNodeMove, 
+  onNodeEdit,
+  onNodeAdd,
+  onNodeDelete
+}: { 
+  data: OrgNode, 
+  onNodeMove: (draggedId: string, targetId: string) => void, 
+  onNodeEdit: (id: string, name: string, head: string, color: string) => void,
+  onNodeAdd: (parentId: string) => void,
+  onNodeDelete: (nodeId: string) => void
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -178,7 +233,7 @@ export const OrgChartTree = ({ data, onNodeMove, onNodeEdit }: { data: OrgNode, 
     <div ref={containerRef} className="org-tree overflow-auto w-full h-full bg-white p-8 cursor-grab active:cursor-grabbing">
       <div className="min-w-max flex justify-center">
         <ul>
-          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} />
+          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} />
         </ul>
       </div>
     </div>
