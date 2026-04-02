@@ -30,6 +30,81 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pastedData, setPastedData] = useState('');
   const [defaultOrgData, setDefaultOrgData] = useState<OrgNode>(initialOrgData);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const searchResults = React.useMemo(() => {
+    if (!searchQuery.trim()) return { nodes: [], employees: [] };
+    
+    const query = searchQuery.toLowerCase();
+    const matchedNodes: OrgNode[] = [];
+    
+    const searchNodes = (node: OrgNode) => {
+      if (node.name.toLowerCase().includes(query) || (node.head && node.head.toLowerCase().includes(query))) {
+        matchedNodes.push(node);
+      }
+      if (node.children) {
+        node.children.forEach(searchNodes);
+      }
+    };
+    searchNodes(orgData);
+    
+    const matchedEmployees = employees.filter(emp => 
+      emp.name.toLowerCase().includes(query) || 
+      emp.department.toLowerCase().includes(query) ||
+      emp.role.toLowerCase().includes(query)
+    );
+    
+    return {
+      nodes: matchedNodes,
+      employees: matchedEmployees
+    };
+  }, [searchQuery, orgData, employees]);
+
+  const findNodeIdByName = (node: OrgNode, name: string): string | null => {
+    if (node.name === name) return node.id;
+    if (node.children) {
+      for (const child of node.children) {
+        const found = findNodeIdByName(child, name);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const handleSearchResultClick = (type: 'node' | 'employee', item: any) => {
+    setCurrentView('orgchart');
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    
+    if (type === 'node') {
+      setSelectedNodeId(item.id);
+    } else {
+      const nodeId = findNodeIdByName(orgData, item.department);
+      if (nodeId) {
+        setSelectedNodeId(nodeId);
+      } else {
+        showToast("해당 직원의 부서를 조직도에서 찾을 수 없습니다.", "error");
+      }
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -122,7 +197,7 @@ export default function App() {
       await updateDoc(doc(db, 'users', userId), { isApproved: !currentStatus });
     } catch (e) {
       console.error("Error updating approval status:", e);
-      alert("상태 변경에 실패했습니다. 권한을 확인하세요.");
+      showToast("상태 변경에 실패했습니다. 권한을 확인하세요.", "error");
     }
   };
 
@@ -201,12 +276,12 @@ export default function App() {
     if (!tempDraggedNode) return;
     
     if (isDescendant(tempDraggedNode, targetId)) {
-      alert("상위 조직을 자신의 하위 조직으로 이동할 수 없습니다.");
+      showToast("상위 조직을 자신의 하위 조직으로 이동할 수 없습니다.", "error");
       return;
     }
 
     if (draggedId === newOrgData.id) {
-      alert("최상위 조직은 이동할 수 없습니다.");
+      showToast("최상위 조직은 이동할 수 없습니다.", "error");
       return;
     }
 
@@ -301,7 +376,7 @@ export default function App() {
 
   const handleNodeDelete = (nodeId: string) => {
     if (nodeId === orgData.id) {
-      alert("최상위 조직은 삭제할 수 없습니다.");
+      showToast("최상위 조직은 삭제할 수 없습니다.", "error");
       return;
     }
     saveHistory(orgData);
@@ -361,7 +436,7 @@ export default function App() {
 
   const handlePasteUpload = () => {
     if (!pastedData.trim()) {
-      alert("데이터를 붙여넣어 주세요.");
+      showToast("데이터를 붙여넣어 주세요.", "error");
       return;
     }
 
@@ -388,16 +463,16 @@ export default function App() {
 
         try {
           await setDoc(doc(db, 'directory', 'main'), { employees: parsedEmployees });
-          alert(`성공적으로 ${parsedEmployees.length}명의 인원 명부를 저장했습니다.`);
+          showToast(`성공적으로 ${parsedEmployees.length}명의 인원 명부를 저장했습니다.`, "success");
           setPastedData(''); // Clear textarea after success
         } catch (error) {
           console.error("Error uploading directory:", error);
-          alert("업로드 중 오류가 발생했습니다.");
+          showToast("업로드 중 오류가 발생했습니다.", "error");
         }
       },
       error: (error) => {
         console.error("Error parsing pasted data:", error);
-        alert("데이터 파싱 중 오류가 발생했습니다.");
+        showToast("데이터 파싱 중 오류가 발생했습니다.", "error");
       }
     });
   };
@@ -575,13 +650,59 @@ export default function App() {
                 </button>
               </>
             )}
-            <div className="relative">
+            <div className="relative" ref={searchRef}>
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
                 type="text" 
                 placeholder="조직 또는 직원 검색..." 
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchOpen(true);
+                }}
+                onFocus={() => setIsSearchOpen(true)}
                 className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
               />
+              {isSearchOpen && searchQuery.trim() && (
+                <div className="absolute top-full mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto">
+                  {searchResults.nodes.length === 0 && searchResults.employees.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-gray-500">검색 결과가 없습니다.</div>
+                  ) : (
+                    <div className="py-2">
+                      {searchResults.nodes.length > 0 && (
+                        <div className="mb-2">
+                          <div className="px-4 py-1 text-xs font-semibold text-gray-500 bg-gray-50">조직</div>
+                          {searchResults.nodes.map(node => (
+                            <button
+                              key={`node-${node.id}`}
+                              onClick={() => handleSearchResultClick('node', node)}
+                              className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm flex flex-col"
+                            >
+                              <span className="font-medium text-gray-900">{node.name}</span>
+                              {node.head && <span className="text-xs text-gray-500">{node.role} {node.head}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchResults.employees.length > 0 && (
+                        <div>
+                          <div className="px-4 py-1 text-xs font-semibold text-gray-500 bg-gray-50">직원</div>
+                          {searchResults.employees.map((emp, idx) => (
+                            <button
+                              key={`emp-${idx}`}
+                              onClick={() => handleSearchResultClick('employee', emp)}
+                              className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm flex flex-col"
+                            >
+                              <span className="font-medium text-gray-900">{emp.name} <span className="text-xs text-gray-500 font-normal">{emp.rank}</span></span>
+                              <span className="text-xs text-gray-500">{emp.department}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <button className="p-2 hover:bg-gray-100 rounded-full relative text-gray-500">
               <Bell size={20} />
@@ -751,10 +872,10 @@ export default function App() {
                     try {
                       await setDoc(doc(db, 'orgChart', 'default'), orgData);
                       setDefaultOrgData(orgData);
-                      alert("성공적으로 현재 조직도가 기본값으로 저장되었습니다.");
+                      showToast("성공적으로 현재 조직도가 기본값으로 저장되었습니다.", "success");
                     } catch (error) {
                       console.error("Error saving default org data:", error);
-                      alert("기본값 저장 중 오류가 발생했습니다.");
+                      showToast("기본값 저장 중 오류가 발생했습니다.", "error");
                     }
                   }}
                   className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -856,6 +977,13 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 px-6 py-3 rounded-lg shadow-lg text-white font-medium z-[100] animate-in slide-in-from-bottom-5 ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }
