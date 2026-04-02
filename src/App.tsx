@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2, Undo2, LogIn, LogOut, Shield, CheckCircle, XCircle, Upload } from 'lucide-react';
+import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2, Undo2, LogIn, LogOut, Shield, CheckCircle, XCircle, Upload, Save } from 'lucide-react';
 import { orgData as initialOrgData, OrgNode } from './data/orgChart';
 import { OrgChartTree } from './components/OrgChartTree';
 import { auth, db, signInWithGoogle, logOut } from './firebase';
@@ -29,6 +29,7 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pastedData, setPastedData] = useState('');
+  const [defaultOrgData, setDefaultOrgData] = useState<OrgNode>(initialOrgData);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -65,12 +66,21 @@ export default function App() {
   useEffect(() => {
     if (!isAuthReady || !user || !userData?.isApproved) return;
 
+    const defaultRef = doc(db, 'orgChart', 'default');
+    const unsubscribeDefault = onSnapshot(defaultRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setDefaultOrgData(docSnap.data() as OrgNode);
+      }
+    });
+
     const docRef = doc(db, 'orgChart', 'main');
     
     // Check if document exists, if not create it
-    getDoc(docRef).then((docSnap) => {
+    getDoc(docRef).then(async (docSnap) => {
       if (!docSnap.exists()) {
-        setDoc(docRef, initialOrgData).catch(console.error);
+        const defSnap = await getDoc(defaultRef);
+        const defData = defSnap.exists() ? defSnap.data() as OrgNode : initialOrgData;
+        setDoc(docRef, defData).catch(console.error);
       }
     });
 
@@ -94,6 +104,7 @@ export default function App() {
     return () => {
       unsubscribe();
       unsubscribeDir();
+      unsubscribeDefault();
     };
   }, [isAuthReady, user, userData]);
 
@@ -554,8 +565,8 @@ export default function App() {
                 <button 
                   onClick={() => {
                     saveHistory(orgData);
-                    setOrgData(initialOrgData);
-                    saveToFirebase(initialOrgData);
+                    setOrgData(defaultOrgData);
+                    saveToFirebase(defaultOrgData);
                   }}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
                   title="초기 데이터로 리셋"
@@ -732,6 +743,27 @@ export default function App() {
 
           {currentView === 'admin' && (
             <div className="space-y-6">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">조직도 기본값 설정</h2>
+                <p className="text-sm text-gray-500 mb-4">현재 화면에 보이는 조직도를 '초기화' 버튼 클릭 시 돌아갈 기본값으로 저장합니다.</p>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await setDoc(doc(db, 'orgChart', 'default'), orgData);
+                      setDefaultOrgData(orgData);
+                      alert("성공적으로 현재 조직도가 기본값으로 저장되었습니다.");
+                    } catch (error) {
+                      console.error("Error saving default org data:", error);
+                      alert("기본값 저장 중 오류가 발생했습니다.");
+                    }
+                  }}
+                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  <Save size={18} />
+                  현재 상태를 기본값으로 저장
+                </button>
+              </div>
+
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-2">인원 명부 데이터 업로드 (붙여넣기)</h2>
                 <p className="text-sm text-gray-500 mb-4">엑셀에서 인원 명부 데이터를 전체 복사(Ctrl+C)한 후 아래 칸에 붙여넣기(Ctrl+V) 해주세요.</p>

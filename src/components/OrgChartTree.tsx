@@ -109,7 +109,7 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
       }}
       onDoubleClick={() => setIsEditing(true)}
       onMouseDown={(e) => e.stopPropagation()}
-      className="inline-block border border-black text-[11px] w-[110px] shadow-sm bg-white relative z-10 cursor-pointer hover:shadow-md transition-shadow group"
+      className="inline-block border border-black text-[12px] md:text-[11px] w-[140px] md:w-[110px] shadow-sm bg-white relative z-10 cursor-pointer hover:shadow-md transition-shadow group"
       title="더블클릭하여 수정, 드래그하여 이동"
     >
       {/* Hover Actions */}
@@ -149,11 +149,11 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
           </button>
         )}
       </div>
-      <div className={`py-1 px-1 font-bold border-b border-black flex items-center justify-center min-h-[28px] text-center leading-tight ${bgColorClass}`}>
+      <div className={`py-1.5 md:py-1 px-1 font-bold border-b border-black flex items-center justify-center min-h-[32px] md:min-h-[28px] text-center leading-tight ${bgColorClass}`}>
         {node.name}
       </div>
       {(node.role || node.head) && (
-        <div className="py-1 px-1 flex justify-center gap-1 items-center bg-white text-black min-h-[24px]">
+        <div className="py-1.5 md:py-1 px-1 flex justify-center gap-1 items-center bg-white text-black min-h-[28px] md:min-h-[24px]">
           {node.role && <span>{node.role}</span>}
           {node.head && <span>{node.head}</span>}
         </div>
