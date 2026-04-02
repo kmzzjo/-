@@ -179,28 +179,29 @@ interface TreeNodeProps {
   onDelete: (nodeId: string) => void;
   onReorder: (nodeId: string, direction: 'left' | 'right') => void;
   onClick?: (nodeId: string) => void;
+  readOnly?: boolean;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete, onReorder, onClick }) => {
+const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete, onReorder, onClick, readOnly }) => {
   const hasChildren = node.children && node.children.length > 0;
 
   return (
     <li>
-      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} />
+      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} readOnly={readOnly} />
       {hasChildren && (
         node.stackChildren ? (
           <div className="relative pt-4">
             <div className="absolute top-0 left-1/2 w-px h-full bg-black -translate-x-1/2 z-0"></div>
             <div className="flex flex-col items-center gap-2 relative z-10">
               {node.children!.map(child => (
-                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} />
+                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} readOnly={readOnly} />
               ))}
             </div>
           </div>
         ) : (
           <ul>
             {node.children!.map(child => (
-              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} />
+              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} readOnly={readOnly} />
             ))}
           </ul>
         )
@@ -216,7 +217,8 @@ export const OrgChartTree = ({
   onNodeAdd,
   onNodeDelete,
   onNodeReorder,
-  onNodeClick
+  onNodeClick,
+  readOnly
 }: { 
   data: OrgNode, 
   onNodeMove: (draggedId: string, targetId: string) => void, 
@@ -224,7 +226,8 @@ export const OrgChartTree = ({
   onNodeAdd: (parentId: string) => void,
   onNodeDelete: (nodeId: string) => void,
   onNodeReorder: (nodeId: string, direction: 'left' | 'right') => void,
-  onNodeClick?: (nodeId: string) => void
+  onNodeClick?: (nodeId: string) => void,
+  readOnly?: boolean
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -279,7 +282,7 @@ export const OrgChartTree = ({
     <div ref={containerRef} className="org-tree overflow-auto w-full h-full bg-white p-8 cursor-grab active:cursor-grabbing">
       <div className="min-w-max flex justify-center">
         <ul>
-          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} onReorder={onNodeReorder} onClick={onNodeClick} />
+          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} onReorder={onNodeReorder} onClick={onNodeClick} readOnly={readOnly} />
         </ul>
       </div>
     </div>
