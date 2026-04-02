@@ -192,12 +192,26 @@ export default function App() {
     }
   }, [currentView, userData]);
 
-  const toggleApproval = async (userId: string, currentStatus: boolean) => {
+  const toggleApproval = async (userId: string, currentStatus: boolean, currentRole: string) => {
     try {
-      await updateDoc(doc(db, 'users', userId), { isApproved: !currentStatus });
+      const updates: any = { isApproved: !currentStatus };
+      if (!currentStatus && currentRole === 'pending') {
+        updates.role = 'viewer';
+      }
+      await updateDoc(doc(db, 'users', userId), updates);
     } catch (e) {
       console.error("Error updating approval status:", e);
       showToast("상태 변경에 실패했습니다. 권한을 확인하세요.", "error");
+    }
+  };
+
+  const changeRole = async (userId: string, newRole: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { role: newRole });
+      showToast("권한이 변경되었습니다.", "success");
+    } catch (e) {
+      console.error("Error updating role:", e);
+      showToast("권한 변경에 실패했습니다.", "error");
     }
   };
 
@@ -595,13 +609,15 @@ export default function App() {
             onClick={() => setCurrentView('orgchart')}
             isOpen={isSidebarOpen}
           />
-          <NavItem 
-            icon={<Users size={20} />} 
-            label="인원 명부" 
-            isActive={currentView === 'directory'} 
-            onClick={() => setCurrentView('directory')}
-            isOpen={isSidebarOpen}
-          />
+          {userData?.role === 'admin' && (
+            <NavItem 
+              icon={<Users size={20} />} 
+              label="인원 명부" 
+              isActive={currentView === 'directory'} 
+              onClick={() => setCurrentView('directory')}
+              isOpen={isSidebarOpen}
+            />
+          )}
           {userData?.role === 'admin' && (
             <NavItem 
               icon={<Shield size={20} />} 
@@ -626,7 +642,7 @@ export default function App() {
           </h1>
           
           <div className="flex items-center gap-4">
-            {currentView === 'orgchart' && (
+            {currentView === 'orgchart' && userData?.role === 'admin' && (
               <>
                 <button 
                   onClick={handleUndo} 
@@ -777,6 +793,7 @@ export default function App() {
                 onNodeDelete={handleNodeDelete}
                 onNodeReorder={handleNodeReorder}
                 onNodeClick={(id) => setSelectedNodeId(id)}
+                readOnly={userData?.role !== 'admin'}
               />
               
               {/* Employee Modal */}
@@ -933,9 +950,22 @@ export default function App() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">{u.email}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
-                            {u.role === 'admin' ? '관리자' : '일반 사용자'}
-                          </span>
+                          {u.email === user?.email ? (
+                            <span className={`px-2 py-1 text-xs rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
+                              {u.role === 'admin' ? '관리자' : (u.role === 'viewer' ? '열람자' : '대기중')}
+                            </span>
+                          ) : (
+                            <select
+                              value={u.role}
+                              onChange={(e) => changeRole(u.id, e.target.value)}
+                              className="text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                              disabled={!u.isApproved}
+                            >
+                              <option value="pending" disabled>대기중</option>
+                              <option value="viewer">열람자</option>
+                              <option value="admin">관리자</option>
+                            </select>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-sm">
                           {new Date(u.createdAt).toLocaleDateString()}
@@ -945,7 +975,7 @@ export default function App() {
                             <span className="text-gray-400 text-sm">기본 승인</span>
                           ) : (
                             <button
-                              onClick={() => toggleApproval(u.id, u.isApproved)}
+                              onClick={() => toggleApproval(u.id, u.isApproved, u.role)}
                               className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                                 u.isApproved 
                                   ? 'bg-green-100 text-green-700 hover:bg-green-200' 

@@ -9,9 +9,10 @@ interface NodeBoxProps {
   onDelete: (nodeId: string) => void;
   onReorder: (nodeId: string, direction: 'left' | 'right') => void;
   onClick?: (nodeId: string) => void;
+  readOnly?: boolean;
 }
 
-const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete, onReorder, onClick }) => {
+const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete, onReorder, onClick, readOnly }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(node.name);
   const [head, setHead] = useState(node.head || '');
@@ -82,19 +83,23 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
 
   return (
     <div 
-      draggable
+      draggable={!readOnly}
       onDragStart={(e) => {
+        if (readOnly) return;
         e.stopPropagation();
         e.dataTransfer.setData('text/plain', node.id);
       }}
       onDragOver={(e) => {
+        if (readOnly) return;
         e.preventDefault();
         e.currentTarget.classList.add('ring-2', 'ring-blue-500');
       }}
       onDragLeave={(e) => {
+        if (readOnly) return;
         e.currentTarget.classList.remove('ring-2', 'ring-blue-500');
       }}
       onDrop={(e) => {
+        if (readOnly) return;
         e.preventDefault();
         e.stopPropagation();
         e.currentTarget.classList.remove('ring-2', 'ring-blue-500');
@@ -107,13 +112,16 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
         e.stopPropagation();
         if (onClick) onClick(node.id);
       }}
-      onDoubleClick={() => setIsEditing(true)}
+      onDoubleClick={() => {
+        if (!readOnly) setIsEditing(true);
+      }}
       onMouseDown={(e) => e.stopPropagation()}
       className="inline-block border border-black text-[12px] md:text-[11px] w-[140px] md:w-[110px] shadow-sm bg-white relative z-10 cursor-pointer hover:shadow-md transition-shadow group"
-      title="더블클릭하여 수정, 드래그하여 이동"
+      title={readOnly ? "" : "더블클릭하여 수정, 드래그하여 이동"}
     >
       {/* Hover Actions */}
-      <div className="absolute -top-2 -right-2 hidden group-hover:flex gap-1 z-20">
+      {!readOnly && (
+        <div className="absolute -top-2 -right-2 hidden group-hover:flex gap-1 z-20">
         {node.id !== 'root' && (
           <button 
             onClick={(e) => { e.stopPropagation(); onReorder(node.id, 'left'); }} 
@@ -149,6 +157,7 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
           </button>
         )}
       </div>
+      )}
       <div className={`py-1.5 md:py-1 px-1 font-bold border-b border-black flex items-center justify-center min-h-[32px] md:min-h-[28px] text-center leading-tight ${bgColorClass}`}>
         {node.name}
       </div>
