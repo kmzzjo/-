@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (uid)
+    // Fields:
+    //   - email: string (required)
+    //   - name: string (optional)
+    //   - role: string (required, 'admin' or 'pending' or 'viewer')
+    //   - isApproved: boolean (required)
+    //   - createdAt: string (optional)
+    //
+    // Collection: orgChart
+    // Document ID: main
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - head: string (optional)
+    //   - role: string (optional)
+    //   - color: string (optional)
+    //   - stackChildren: boolean (optional)
+    //   - children: array (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "kmzzjo@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isApproved() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true ||
+         isAdmin());
+    }
+
+    // Validate OrgNode
+    function isValidOrgNode(data) {
+      return data.keys().hasAll(['id', 'name']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('head' in data) || (data.head is string && data.head.size() < 100)) &&
+             (!('role' in data) || (data.role is string && data.role.size() < 100)) &&
+             (!('color' in data) || (data.color in ['blue', 'yellow', 'peach', 'gray', 'white'])) &&
+             (!('stackChildren' in data) || data.stackChildren is bool) &&
+             (!('children' in data) || data.children is list);
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == userId &&
+        (
+          (request.auth.token.email == "kmzzjo@gmail.com" && request.resource.data.role == 'admin' && request.resource.data.isApproved == true) ||
+          (request.resource.data.role == 'pending' && request.resource.data.isApproved == false)
+        );
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /orgChart/{documentId} {
+      allow read: if isApproved();
+      allow create: if isApproved() && isValidOrgNode(request.resource.data);
+      allow update: if isApproved() && isValidOrgNode(request.resource.data);
+      allow delete: if false;
+    }
+  }
+}

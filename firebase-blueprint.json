@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "pending", "viewer"] },
+        "isApproved": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "role", "isApproved"]
+    },
+    "OrgNode": {
+      "title": "OrgNode",
+      "description": "A node in the organizational chart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "head": { "type": "string" },
+        "role": { "type": "string" },
+        "color": { "type": "string", "enum": ["blue", "yellow", "peach", "gray", "white"] },
+        "stackChildren": { "type": "boolean" },
+        "children": {
+          "type": "array"
+        }
+      },
+      "required": ["id", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user roles and approval status"
+    },
+    "/orgChart/{documentId}": {
+      "schema": { "$ref": "#/entities/OrgNode" },
+      "description": "Stores the organizational chart data"
+    }
+  }
+}
