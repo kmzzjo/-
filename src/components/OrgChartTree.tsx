@@ -4,7 +4,7 @@ import { OrgNode } from '../data/orgChart';
 interface NodeBoxProps {
   node: OrgNode;
   onMove: (draggedId: string, targetId: string) => void;
-  onEdit: (id: string, name: string, head: string, color: string) => void;
+  onEdit: (id: string, name: string, head: string, role: string, color: string) => void;
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
 }
@@ -13,6 +13,7 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(node.name);
   const [head, setHead] = useState(node.head || '');
+  const [role, setRole] = useState(node.role || '');
   const [color, setColor] = useState<string>(node.color || 'white');
 
   const bgColors: Record<string, string> = {
@@ -58,14 +59,20 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
           placeholder="조직명"
         />
         <input 
+          value={role} 
+          onChange={e => setRole(e.target.value)} 
+          className="w-full text-center border-b border-gray-300 mb-1 text-black focus:outline-none"
+          placeholder="직급 (예: 상무)"
+        />
+        <input 
           value={head} 
           onChange={e => setHead(e.target.value)} 
           className="w-full text-center border-b border-gray-300 mb-1 text-black focus:outline-none"
-          placeholder="직책자"
+          placeholder="이름"
         />
         <div className="flex gap-1">
-          <button onClick={() => { onEdit(node.id, name, head, color); setIsEditing(false); }} className="flex-1 bg-blue-500 text-white text-[10px] py-0.5 rounded">저장</button>
-          <button onClick={() => { setIsEditing(false); setName(node.name); setHead(node.head || ''); setColor(node.color || 'white'); }} className="flex-1 bg-gray-300 text-black text-[10px] py-0.5 rounded">취소</button>
+          <button onClick={() => { onEdit(node.id, name, head, role, color); setIsEditing(false); }} className="flex-1 bg-blue-500 text-white text-[10px] py-0.5 rounded">저장</button>
+          <button onClick={() => { setIsEditing(false); setName(node.name); setHead(node.head || ''); setRole(node.role || ''); setColor(node.color || 'white'); }} className="flex-1 bg-gray-300 text-black text-[10px] py-0.5 rounded">취소</button>
         </div>
       </div>
     );
@@ -134,7 +141,7 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
 interface TreeNodeProps {
   node: OrgNode;
   onMove: (draggedId: string, targetId: string) => void;
-  onEdit: (id: string, name: string, head: string, color: string) => void;
+  onEdit: (id: string, name: string, head: string, role: string, color: string) => void;
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
 }
@@ -176,7 +183,7 @@ export const OrgChartTree = ({
 }: { 
   data: OrgNode, 
   onNodeMove: (draggedId: string, targetId: string) => void, 
-  onNodeEdit: (id: string, name: string, head: string, color: string) => void,
+  onNodeEdit: (id: string, name: string, head: string, role: string, color: string) => void,
   onNodeAdd: (parentId: string) => void,
   onNodeDelete: (nodeId: string) => void
 }) => {

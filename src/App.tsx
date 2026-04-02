@@ -212,7 +212,7 @@ export default function App() {
     saveToFirebase(newOrgData);
   };
 
-  const handleNodeEdit = (id: string, name: string, head: string, color: string) => {
+  const handleNodeEdit = (id: string, name: string, head: string, role: string, color: string) => {
     saveHistory(orgData);
     const newOrgData = JSON.parse(JSON.stringify(orgData));
     
@@ -220,6 +220,7 @@ export default function App() {
       if (node.id === id) {
         node.name = name;
         node.head = head;
+        node.role = role;
         node.color = color as any;
         return true;
       }
