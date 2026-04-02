@@ -1,12 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2, Undo2, LogIn, LogOut, Shield, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2, Undo2, LogIn, LogOut, Shield, CheckCircle, XCircle, Upload } from 'lucide-react';
 import { orgData as initialOrgData, OrgNode } from './data/orgChart';
 import { OrgChartTree } from './components/OrgChartTree';
 import { auth, db, signInWithGoogle, logOut } from './firebase';
 import { doc, onSnapshot, setDoc, getDoc, collection, updateDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import Papa from 'papaparse';
 
 type ViewState = 'dashboard' | 'orgchart' | 'directory' | 'admin';
+
+export interface Employee {
+  department: string;
+  name: string;
+  rank: string;
+  rankStep: number;
+  role: string;
+}
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
@@ -17,6 +26,9 @@ export default function App() {
   const [userData, setUserData] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [pastedData, setPastedData] = useState('');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -70,7 +82,19 @@ export default function App() {
       console.error("Error fetching org chart:", error);
     });
 
-    return () => unsubscribe();
+    const dirRef = doc(db, 'directory', 'main');
+    const unsubscribeDir = onSnapshot(dirRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setEmployees(docSnap.data().employees || []);
+      }
+    }, (error) => {
+      console.error("Error fetching directory:", error);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeDir();
+    };
   }, [isAuthReady, user, userData]);
 
   useEffect(() => {
@@ -290,6 +314,89 @@ export default function App() {
     saveToFirebase(newOrgData);
   };
 
+  const handlePasteUpload = () => {
+    if (!pastedData.trim()) {
+      alert("데이터를 붙여넣어 주세요.");
+      return;
+    }
+
+    Papa.parse(pastedData, {
+      delimiter: "\t", // Excel copy-paste uses tabs
+      complete: async (results) => {
+        const rows = results.data as string[][];
+        const parsedEmployees: Employee[] = [];
+
+        // D = 3, H = 7, R = 17, S = 18, U = 20
+        for (let i = 1; i < rows.length; i++) { // Skip header row
+          const row = rows[i];
+          // Check if row has enough columns and required fields (Department and Name)
+          if (row.length > 7 && row[3] && row[7]) {
+            parsedEmployees.push({
+              department: row[3].trim(),
+              name: row[7].trim(),
+              rank: row[17] ? row[17].trim() : '',
+              rankStep: row[18] ? parseInt(row[18].trim(), 10) || 0 : 0,
+              role: row[20] ? row[20].trim() : ''
+            });
+          }
+        }
+
+        try {
+          await setDoc(doc(db, 'directory', 'main'), { employees: parsedEmployees });
+          alert(`성공적으로 ${parsedEmployees.length}명의 인원 명부를 저장했습니다.`);
+          setPastedData(''); // Clear textarea after success
+        } catch (error) {
+          console.error("Error uploading directory:", error);
+          alert("업로드 중 오류가 발생했습니다.");
+        }
+      },
+      error: (error) => {
+        console.error("Error parsing pasted data:", error);
+        alert("데이터 파싱 중 오류가 발생했습니다.");
+      }
+    });
+  };
+
+  const getSortedEmployees = (departmentName: string) => {
+    const deptEmployees = employees.filter(e => e.department === departmentName);
+    
+    const rolePriority: Record<string, number> = {
+      '본부장': 1,
+      '실장': 2,
+      '팀장': 3,
+    };
+
+    const rankPriorityList = ['전무이사', 'S3', 'S2', 'S1', 'G3', 'G2', 'G1', 'M2', 'M1', '사원', '수습사원(임시)'];
+    const getRankPriority = (rank: string) => {
+      const index = rankPriorityList.indexOf(rank);
+      return index === -1 ? 999 : index;
+    };
+
+    return deptEmployees.sort((a, b) => {
+      const roleA = rolePriority[a.role] || 4;
+      const roleB = rolePriority[b.role] || 4;
+      if (roleA !== roleB) return roleA - roleB;
+
+      const rankA = getRankPriority(a.rank);
+      const rankB = getRankPriority(b.rank);
+      if (rankA !== rankB) return rankA - rankB;
+
+      return b.rankStep - a.rankStep;
+    });
+  };
+
+  const findNodeById = (node: OrgNode, id: string): OrgNode | null => {
+    if (node.id === id) return node;
+    if (!node.children) return null;
+    for (const child of node.children) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const selectedNode = selectedNodeId ? findNodeById(orgData, selectedNodeId) : null;
+
   if (!isAuthReady) {
     return <div className="flex h-screen items-center justify-center bg-gray-50">로딩 중...</div>;
   }
@@ -465,7 +572,7 @@ export default function App() {
               {/* Stats Row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard title="총 조직 수" value={totalDepartments.toString()} icon={<Network className="text-blue-500" />} />
-                <StatCard title="총 임직원 수" value="학습 예정" icon={<Users className="text-green-500" />} />
+                <StatCard title="총 임직원 수" value={`${employees.length}명`} icon={<Users className="text-green-500" />} />
                 <StatCard title="본부/실" value="15개" icon={<Building2 className="text-purple-500" />} />
               </div>
 
@@ -495,35 +602,130 @@ export default function App() {
           )}
 
           {currentView === 'orgchart' && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm min-h-full overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm min-h-full overflow-hidden relative">
               <OrgChartTree 
                 data={orgData} 
                 onNodeMove={handleNodeMove} 
                 onNodeEdit={handleNodeEdit} 
                 onNodeAdd={handleNodeAdd}
                 onNodeDelete={handleNodeDelete}
+                onNodeClick={(id) => setSelectedNodeId(id)}
               />
+              
+              {/* Employee Modal */}
+              {selectedNode && (
+                <div className="absolute top-0 right-0 w-80 h-full bg-white border-l border-gray-200 shadow-xl flex flex-col z-50 animate-in slide-in-from-right">
+                  <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-900">{selectedNode.name} 인원</h3>
+                    <button onClick={() => setSelectedNodeId(null)} className="text-gray-500 hover:text-gray-700">
+                      <XCircle size={20} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {getSortedEmployees(selectedNode.name).length > 0 ? (
+                      <div className="space-y-3">
+                        {getSortedEmployees(selectedNode.name).map((emp, idx) => (
+                          <div key={idx} className="flex flex-col p-3 bg-white border border-gray-100 rounded-lg shadow-sm">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-bold text-gray-900">{emp.name}</span>
+                              {emp.role && (
+                                <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-medium">
+                                  {emp.role}
+                               </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-500 flex justify-between">
+                              <span>{emp.rank}</span>
+                              {emp.rankStep > 0 && <span>Step {emp.rankStep}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center text-gray-500 mt-10">
+                        <Users size={32} className="mx-auto text-gray-300 mb-2" />
+                        <p>해당 조직에 등록된 인원이 없습니다.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {currentView === 'directory' && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-12 flex flex-col items-center justify-center text-center h-full">
-              <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-                <Users size={32} className="text-blue-500" />
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
+              <div className="p-6 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">전체 인원 명부</h2>
+                <p className="text-sm text-gray-500 mt-1">등록된 전체 임직원 목록입니다.</p>
               </div>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">인원 명부 데이터 학습 대기중</h2>
-              <p className="text-gray-500 max-w-md">
-                현재 조직도 구조가 완성되었습니다. 추후 엑셀이나 CSV 형태의 인원 명부 데이터를 제공해주시면, 각 조직에 속한 직원 정보를 매핑하여 상세한 디렉토리 기능을 제공할 수 있습니다.
-              </p>
+              <div className="flex-1 overflow-auto p-6">
+                {employees.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {employees.map((emp, idx) => (
+                      <div key={idx} className="flex flex-col p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-bold text-gray-900 text-lg">{emp.name}</span>
+                          {emp.role && (
+                            <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-full font-medium">
+                              {emp.role}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600 mb-1 font-medium">{emp.department}</div>
+                        <div className="text-sm text-gray-500 flex justify-between mt-auto pt-2 border-t border-gray-100">
+                          <span>{emp.rank}</span>
+                          {emp.rankStep > 0 && <span>Step {emp.rankStep}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                      <Users size={32} className="text-gray-400" />
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-800 mb-2">데이터가 없습니다</h2>
+                    <p className="text-gray-500 max-w-md">
+                      관리자 설정에서 CSV 형태의 인원 명부 데이터를 업로드해주세요.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {currentView === 'admin' && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">사용자 권한 관리</h2>
-                <p className="text-sm text-gray-500 mt-1">대시보드에 접근할 수 있는 사용자를 승인하거나 차단합니다.</p>
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">인원 명부 데이터 업로드 (붙여넣기)</h2>
+                <p className="text-sm text-gray-500 mb-4">엑셀에서 인원 명부 데이터를 전체 복사(Ctrl+C)한 후 아래 칸에 붙여넣기(Ctrl+V) 해주세요.</p>
+                <textarea 
+                  value={pastedData}
+                  onChange={(e) => setPastedData(e.target.value)}
+                  placeholder="여기에 엑셀 데이터를 붙여넣으세요..."
+                  className="w-full h-40 p-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3 resize-none"
+                />
+                <button 
+                  onClick={handlePasteUpload}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  <Upload size={18} />
+                  데이터 저장하기
+                </button>
+                {employees.length > 0 && (
+                  <p className="text-sm text-green-600 mt-3 font-medium">
+                    <CheckCircle size={14} className="inline mr-1 relative -top-0.5" />
+                    현재 {employees.length}명의 데이터가 연동되어 있습니다.
+                  </p>
+                )}
               </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200">
+                  <h2 className="text-lg font-semibold text-gray-900">사용자 권한 관리</h2>
+                  <p className="text-sm text-gray-500 mt-1">대시보드에 접근할 수 있는 사용자를 승인하거나 차단합니다.</p>
+                </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -582,6 +784,7 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+            </div>
             </div>
           )}
         </div>

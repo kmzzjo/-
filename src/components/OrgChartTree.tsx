@@ -7,9 +7,10 @@ interface NodeBoxProps {
   onEdit: (id: string, name: string, head: string, role: string, color: string) => void;
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
+  onClick?: (nodeId: string) => void;
 }
 
-const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete }) => {
+const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete, onClick }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(node.name);
   const [head, setHead] = useState(node.head || '');
@@ -101,6 +102,10 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
           onMove(draggedId, node.id);
         }
       }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onClick) onClick(node.id);
+      }}
       onDoubleClick={() => setIsEditing(true)}
       onMouseDown={(e) => e.stopPropagation()}
       className="inline-block border border-black text-[11px] w-[110px] shadow-sm bg-white relative z-10 cursor-pointer hover:shadow-md transition-shadow group"
@@ -144,28 +149,29 @@ interface TreeNodeProps {
   onEdit: (id: string, name: string, head: string, role: string, color: string) => void;
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
+  onClick?: (nodeId: string) => void;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete }) => {
+const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete, onClick }) => {
   const hasChildren = node.children && node.children.length > 0;
 
   return (
     <li>
-      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} />
+      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onClick={onClick} />
       {hasChildren && (
         node.stackChildren ? (
           <div className="relative pt-4">
             <div className="absolute top-0 left-1/2 w-px h-full bg-black -translate-x-1/2 z-0"></div>
             <div className="flex flex-col items-center gap-2 relative z-10">
               {node.children!.map(child => (
-                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} />
+                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onClick={onClick} />
               ))}
             </div>
           </div>
         ) : (
           <ul>
             {node.children!.map(child => (
-              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} />
+              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onClick={onClick} />
             ))}
           </ul>
         )
@@ -179,13 +185,15 @@ export const OrgChartTree = ({
   onNodeMove, 
   onNodeEdit,
   onNodeAdd,
-  onNodeDelete
+  onNodeDelete,
+  onNodeClick
 }: { 
   data: OrgNode, 
   onNodeMove: (draggedId: string, targetId: string) => void, 
   onNodeEdit: (id: string, name: string, head: string, role: string, color: string) => void,
   onNodeAdd: (parentId: string) => void,
-  onNodeDelete: (nodeId: string) => void
+  onNodeDelete: (nodeId: string) => void,
+  onNodeClick?: (nodeId: string) => void
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -240,7 +248,7 @@ export const OrgChartTree = ({
     <div ref={containerRef} className="org-tree overflow-auto w-full h-full bg-white p-8 cursor-grab active:cursor-grabbing">
       <div className="min-w-max flex justify-center">
         <ul>
-          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} />
+          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} onClick={onNodeClick} />
         </ul>
       </div>
     </div>

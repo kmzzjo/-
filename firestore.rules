@@ -77,5 +77,10 @@ service cloud.firestore {
       allow update: if isApproved() && isValidOrgNode(request.resource.data);
       allow delete: if false;
     }
+
+    match /directory/{documentId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
   }
 }
