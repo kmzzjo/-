@@ -314,6 +314,40 @@ export default function App() {
     saveToFirebase(newOrgData);
   };
 
+  const handleNodeReorder = (nodeId: string, direction: 'left' | 'right') => {
+    if (nodeId === orgData.id) return;
+    saveHistory(orgData);
+    const newOrgData = JSON.parse(JSON.stringify(orgData));
+    
+    const reorderNode = (node: OrgNode): boolean => {
+      if (!node.children) return false;
+      const index = node.children.findIndex(c => c.id === nodeId);
+      if (index !== -1) {
+        if (direction === 'left' && index > 0) {
+          const temp = node.children[index];
+          node.children[index] = node.children[index - 1];
+          node.children[index - 1] = temp;
+          return true;
+        } else if (direction === 'right' && index < node.children.length - 1) {
+          const temp = node.children[index];
+          node.children[index] = node.children[index + 1];
+          node.children[index + 1] = temp;
+          return true;
+        }
+        return false;
+      }
+      for (const child of node.children) {
+        if (reorderNode(child)) return true;
+      }
+      return false;
+    };
+    
+    if (reorderNode(newOrgData)) {
+      setOrgData(newOrgData);
+      saveToFirebase(newOrgData);
+    }
+  };
+
   const handlePasteUpload = () => {
     if (!pastedData.trim()) {
       alert("데이터를 붙여넣어 주세요.");
@@ -609,6 +643,7 @@ export default function App() {
                 onNodeEdit={handleNodeEdit} 
                 onNodeAdd={handleNodeAdd}
                 onNodeDelete={handleNodeDelete}
+                onNodeReorder={handleNodeReorder}
                 onNodeClick={(id) => setSelectedNodeId(id)}
               />
               

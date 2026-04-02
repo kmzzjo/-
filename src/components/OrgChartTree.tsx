@@ -7,10 +7,11 @@ interface NodeBoxProps {
   onEdit: (id: string, name: string, head: string, role: string, color: string) => void;
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
+  onReorder: (nodeId: string, direction: 'left' | 'right') => void;
   onClick?: (nodeId: string) => void;
 }
 
-const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete, onClick }) => {
+const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete, onReorder, onClick }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(node.name);
   const [head, setHead] = useState(node.head || '');
@@ -113,6 +114,24 @@ const NodeBox: React.FC<NodeBoxProps> = ({ node, onMove, onEdit, onAdd, onDelete
     >
       {/* Hover Actions */}
       <div className="absolute -top-2 -right-2 hidden group-hover:flex gap-1 z-20">
+        {node.id !== 'root' && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onReorder(node.id, 'left'); }} 
+            className="bg-gray-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow hover:bg-gray-600"
+            title="앞으로 이동"
+          >
+            ←
+          </button>
+        )}
+        {node.id !== 'root' && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onReorder(node.id, 'right'); }} 
+            className="bg-gray-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow hover:bg-gray-600"
+            title="뒤로 이동"
+          >
+            →
+          </button>
+        )}
         <button 
           onClick={(e) => { e.stopPropagation(); onAdd(node.id); }} 
           className="bg-green-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow hover:bg-green-600"
@@ -149,29 +168,30 @@ interface TreeNodeProps {
   onEdit: (id: string, name: string, head: string, role: string, color: string) => void;
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
+  onReorder: (nodeId: string, direction: 'left' | 'right') => void;
   onClick?: (nodeId: string) => void;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete, onClick }) => {
+const TreeNode: React.FC<TreeNodeProps> = ({ node, onMove, onEdit, onAdd, onDelete, onReorder, onClick }) => {
   const hasChildren = node.children && node.children.length > 0;
 
   return (
     <li>
-      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onClick={onClick} />
+      <NodeBox node={node} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} />
       {hasChildren && (
         node.stackChildren ? (
           <div className="relative pt-4">
             <div className="absolute top-0 left-1/2 w-px h-full bg-black -translate-x-1/2 z-0"></div>
             <div className="flex flex-col items-center gap-2 relative z-10">
               {node.children!.map(child => (
-                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onClick={onClick} />
+                <NodeBox key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} />
               ))}
             </div>
           </div>
         ) : (
           <ul>
             {node.children!.map(child => (
-              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onClick={onClick} />
+              <TreeNode key={child.id} node={child} onMove={onMove} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} onReorder={onReorder} onClick={onClick} />
             ))}
           </ul>
         )
@@ -186,6 +206,7 @@ export const OrgChartTree = ({
   onNodeEdit,
   onNodeAdd,
   onNodeDelete,
+  onNodeReorder,
   onNodeClick
 }: { 
   data: OrgNode, 
@@ -193,6 +214,7 @@ export const OrgChartTree = ({
   onNodeEdit: (id: string, name: string, head: string, role: string, color: string) => void,
   onNodeAdd: (parentId: string) => void,
   onNodeDelete: (nodeId: string) => void,
+  onNodeReorder: (nodeId: string, direction: 'left' | 'right') => void,
   onNodeClick?: (nodeId: string) => void
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -248,7 +270,7 @@ export const OrgChartTree = ({
     <div ref={containerRef} className="org-tree overflow-auto w-full h-full bg-white p-8 cursor-grab active:cursor-grabbing">
       <div className="min-w-max flex justify-center">
         <ul>
-          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} onClick={onNodeClick} />
+          <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onDelete={onNodeDelete} onReorder={onNodeReorder} onClick={onNodeClick} />
         </ul>
       </div>
     </div>
