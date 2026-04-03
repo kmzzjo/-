@@ -753,9 +753,9 @@ export default function App() {
             <div className="space-y-6">
               {/* Stats Row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="총 조직 수" value={totalDepartments.toString()} icon={<Network className="text-blue-500" />} />
-                <StatCard title="총 임직원 수" value={`${employees.length}명`} icon={<Users className="text-green-500" />} />
-                <StatCard title="본부/실" value="15개" icon={<Building2 className="text-purple-500" />} />
+                <StatCard title="본부" value="6" icon={<Building2 className="text-blue-500" />} />
+                <StatCard title="실" value="25" icon={<Network className="text-purple-500" />} />
+                <StatCard title="팀" value="54" icon={<Users className="text-green-500" />} />
               </div>
 
               {/* Main Divisions Overview */}
@@ -785,6 +785,43 @@ export default function App() {
 
           {currentView === 'orgchart' && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm min-h-full overflow-hidden relative">
+              <div className="absolute top-4 left-4 z-10 bg-white/90 p-4 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm">
+                <h3 className="font-bold text-gray-800 mb-2">개편일 : '26. 04. 01부</h3>
+                <table className="text-sm border-collapse border border-gray-300 text-center">
+                  <thead>
+                    <tr className="bg-[#1e4b82] text-white">
+                      <th className="border border-gray-300 px-3 py-1 font-medium">구 분</th>
+                      <th className="border border-gray-300 px-3 py-1 font-medium">변경전</th>
+                      <th className="border border-gray-300 px-3 py-1 font-medium">변경후</th>
+                      <th className="border border-gray-300 px-3 py-1 font-medium">차이</th>
+                      <th className="border border-gray-300 px-4 py-1 font-medium text-left">비고</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    <tr>
+                      <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">본부</td>
+                      <td className="border border-gray-300 px-3 py-1">5</td>
+                      <td className="border border-gray-300 px-3 py-1">6</td>
+                      <td className="border border-gray-300 px-3 py-1">1</td>
+                      <td className="border border-gray-300 px-4 py-1 text-left font-medium">+1 품질본부 신설</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">실</td>
+                      <td className="border border-gray-300 px-3 py-1">24</td>
+                      <td className="border border-gray-300 px-3 py-1">25</td>
+                      <td className="border border-gray-300 px-3 py-1">1</td>
+                      <td className="border border-gray-300 px-4 py-1 text-left font-medium">+1 기획실 신설</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">팀</td>
+                      <td className="border border-gray-300 px-3 py-1">52</td>
+                      <td className="border border-gray-300 px-3 py-1">54</td>
+                      <td className="border border-gray-300 px-3 py-1">2</td>
+                      <td className="border border-gray-300 px-4 py-1 text-left font-medium">+2 미래전략팀, 통합구매팀 신설</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
               <OrgChartTree 
                 data={orgData} 
                 onNodeMove={handleNodeMove} 
