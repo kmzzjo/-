@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { LayoutDashboard, Network, Users, Search, Bell, Menu, Building2, Undo2, LogIn, LogOut, Shield, CheckCircle, XCircle, Upload, Save } from 'lucide-react';
 import { orgData as initialOrgData, OrgNode } from './data/orgChart';
 import { OrgChartTree } from './components/OrgChartTree';
-import { auth, db, signInWithGoogle, logOut } from './firebase';
+import { auth, db, signInWithGoogle, logOut, handleFirestoreError, OperationType } from './firebase';
 import { doc, onSnapshot, setDoc, getDoc, collection, updateDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import Papa from 'papaparse';
+
+import { Dashboard } from './components/Dashboard';
 
 type ViewState = 'dashboard' | 'orgchart' | 'directory' | 'admin';
 
@@ -63,6 +65,9 @@ export default function App() {
       if (node.children) {
         node.children.forEach(searchNodes);
       }
+      if (node.rightBranch) {
+        searchNodes(node.rightBranch);
+      }
     };
     searchNodes(orgData);
     
@@ -85,6 +90,10 @@ export default function App() {
         const found = findNodeIdByName(child, name);
         if (found) return found;
       }
+    }
+    if (node.rightBranch) {
+      const found = findNodeIdByName(node.rightBranch, name);
+      if (found) return found;
     }
     return null;
   };
@@ -128,7 +137,7 @@ export default function App() {
             setUserData(docSnap.data());
           }
         } catch (e) {
-          console.error("Error fetching user data:", e);
+          handleFirestoreError(e, OperationType.GET, 'users/' + currentUser.uid);
         }
       } else {
         setUserData(null);
@@ -146,6 +155,8 @@ export default function App() {
       if (docSnap.exists()) {
         setDefaultOrgData(docSnap.data() as OrgNode);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'orgChart/default');
     });
 
     const docRef = doc(db, 'orgChart', 'main');
@@ -155,16 +166,30 @@ export default function App() {
       if (!docSnap.exists()) {
         const defSnap = await getDoc(defaultRef);
         const defData = defSnap.exists() ? defSnap.data() as OrgNode : initialOrgData;
-        setDoc(docRef, defData).catch(console.error);
+        setDoc(docRef, defData).catch(e => handleFirestoreError(e, OperationType.WRITE, 'orgChart/main'));
+      } else {
+        // Migration: If the old structure (future-strategy in children) is detected, or if ext-support lacks offsetX, overwrite with new initialOrgData
+        const currentData = docSnap.data() as OrgNode;
+        const viceChairman = currentData.children?.find(c => c.id === 'vice-chairman');
+        const hasFutureStrategyInChildren = viceChairman?.children?.some(c => c.id === 'future-strategy');
+        
+        const ceo = viceChairman?.children?.find(c => c.id === 'ceo');
+        const extSupport = ceo?.rightBranch;
+        const needsOffsetXMigration = extSupport && extSupport.offsetX !== 185;
+        
+        if (hasFutureStrategyInChildren || needsOffsetXMigration) {
+          console.log("Migrating org chart data to new structure (including offsetX)...");
+          setDoc(docRef, initialOrgData).catch(e => handleFirestoreError(e, OperationType.WRITE, 'orgChart/main'));
+        }
       }
-    });
+    }).catch(e => handleFirestoreError(e, OperationType.GET, 'orgChart/main'));
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         setOrgData(docSnap.data() as OrgNode);
       }
     }, (error) => {
-      console.error("Error fetching org chart:", error);
+      handleFirestoreError(error, OperationType.GET, 'orgChart/main');
     });
 
     const dirRef = doc(db, 'directory', 'main');
@@ -173,7 +198,7 @@ export default function App() {
         setEmployees(docSnap.data().employees || []);
       }
     }, (error) => {
-      console.error("Error fetching directory:", error);
+      handleFirestoreError(error, OperationType.GET, 'directory/main');
     });
 
     return () => {
@@ -187,6 +212,8 @@ export default function App() {
     if (currentView === 'admin' && userData?.role === 'admin') {
       const unsub = onSnapshot(collection(db, 'users'), (snap) => {
         setAllUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, 'users');
       });
       return () => unsub();
     }
@@ -200,8 +227,7 @@ export default function App() {
       }
       await updateDoc(doc(db, 'users', userId), updates);
     } catch (e) {
-      console.error("Error updating approval status:", e);
-      showToast("상태 변경에 실패했습니다. 권한을 확인하세요.", "error");
+      handleFirestoreError(e, OperationType.UPDATE, 'users/' + userId);
     }
   };
 
@@ -210,8 +236,7 @@ export default function App() {
       await updateDoc(doc(db, 'users', userId), { role: newRole });
       showToast("권한이 변경되었습니다.", "success");
     } catch (e) {
-      console.error("Error updating role:", e);
-      showToast("권한 변경에 실패했습니다.", "error");
+      handleFirestoreError(e, OperationType.UPDATE, 'users/' + userId);
     }
   };
 
@@ -220,7 +245,7 @@ export default function App() {
     try {
       await setDoc(doc(db, 'orgChart', 'main'), newData);
     } catch (error) {
-      console.error("Error saving to Firebase:", error);
+      handleFirestoreError(error, OperationType.WRITE, 'orgChart/main');
     }
   };
 
@@ -260,6 +285,9 @@ export default function App() {
         count += countNodes(child);
       });
     }
+    if (node.rightBranch) {
+      count += countNodes(node.rightBranch);
+    }
     return count;
   };
 
@@ -272,15 +300,21 @@ export default function App() {
     // Check if target is a descendant of dragged node
     const isDescendant = (node: OrgNode, id: string): boolean => {
       if (node.id === id) return true;
-      if (!node.children) return false;
-      return node.children.some(c => isDescendant(c, id));
+      if (node.children && node.children.some(c => isDescendant(c, id))) return true;
+      if (node.rightBranch && isDescendant(node.rightBranch, id)) return true;
+      return false;
     };
 
     const findNode = (node: OrgNode, id: string): OrgNode | null => {
       if (node.id === id) return node;
-      if (!node.children) return null;
-      for (const child of node.children) {
-        const found = findNode(child, id);
+      if (node.children) {
+        for (const child of node.children) {
+          const found = findNode(child, id);
+          if (found) return found;
+        }
+      }
+      if (node.rightBranch) {
+        const found = findNode(node.rightBranch, id);
         if (found) return found;
       }
       return null;
@@ -301,6 +335,14 @@ export default function App() {
 
     let draggedNode: OrgNode | null = null;
     const removeNode = (node: OrgNode, id: string): boolean => {
+      if (node.rightBranch) {
+        if (node.rightBranch.id === id) {
+          draggedNode = node.rightBranch;
+          delete node.rightBranch;
+          return true;
+        }
+        if (removeNode(node.rightBranch, id)) return true;
+      }
       if (!node.children) return false;
       const index = node.children.findIndex(c => c.id === id);
       if (index !== -1) {
@@ -324,6 +366,7 @@ export default function App() {
         node.children.push(newNode);
         return true;
       }
+      if (node.rightBranch && addNode(node.rightBranch, targetId, newNode)) return true;
       if (!node.children) return false;
       for (const child of node.children) {
         if (addNode(child, targetId, newNode)) return true;
@@ -348,6 +391,7 @@ export default function App() {
         node.color = color as any;
         return true;
       }
+      if (node.rightBranch && editNode(node.rightBranch, id)) return true;
       if (!node.children) return false;
       for (const child of node.children) {
         if (editNode(child, id)) return true;
@@ -376,6 +420,7 @@ export default function App() {
         });
         return true;
       }
+      if (node.rightBranch && addNode(node.rightBranch)) return true;
       if (!node.children) return false;
       for (const child of node.children) {
         if (addNode(child)) return true;
@@ -388,6 +433,55 @@ export default function App() {
     saveToFirebase(newOrgData);
   };
 
+  const handleNodeAddSibling = (nodeId: string) => {
+    if (nodeId === orgData.id) {
+      showToast("최상위 조직은 형제 조직을 추가할 수 없습니다.", "error");
+      return;
+    }
+    saveHistory(orgData);
+    const newOrgData = JSON.parse(JSON.stringify(orgData));
+    
+    const addSibling = (node: OrgNode): boolean => {
+      if (node.children) {
+        const index = node.children.findIndex(c => c.id === nodeId);
+        if (index !== -1) {
+          node.children.splice(index + 1, 0, {
+            id: `node-${Date.now()}`,
+            name: '새 조직',
+            head: '',
+            color: 'white',
+            children: []
+          });
+          return true;
+        }
+      }
+      if (node.rightBranch) {
+        if (node.rightBranch.id === nodeId) {
+          if (!node.children) node.children = [];
+          node.children.unshift({
+            id: `node-${Date.now()}`,
+            name: '새 조직',
+            head: '',
+            color: 'white',
+            children: []
+          });
+          return true;
+        }
+        if (addSibling(node.rightBranch)) return true;
+      }
+      if (!node.children) return false;
+      for (const child of node.children) {
+        if (addSibling(child)) return true;
+      }
+      return false;
+    };
+    
+    if (addSibling(newOrgData)) {
+      setOrgData(newOrgData);
+      saveToFirebase(newOrgData);
+    }
+  };
+
   const handleNodeDelete = (nodeId: string) => {
     if (nodeId === orgData.id) {
       showToast("최상위 조직은 삭제할 수 없습니다.", "error");
@@ -397,10 +491,38 @@ export default function App() {
     const newOrgData = JSON.parse(JSON.stringify(orgData));
     
     const deleteNode = (node: OrgNode): boolean => {
+      if (node.rightBranch) {
+        if (node.rightBranch.id === nodeId) {
+          const hasChildren = node.rightBranch.children && node.rightBranch.children.length > 0;
+          const hasRightBranch = !!node.rightBranch.rightBranch;
+          
+          if (hasChildren || hasRightBranch) {
+            node.rightBranch.name = "";
+            node.rightBranch.role = "";
+            node.rightBranch.head = "";
+            node.rightBranch.isInvisible = true;
+          } else {
+            delete node.rightBranch;
+          }
+          return true;
+        }
+        if (deleteNode(node.rightBranch)) return true;
+      }
       if (!node.children) return false;
       const index = node.children.findIndex(c => c.id === nodeId);
       if (index !== -1) {
-        node.children.splice(index, 1);
+        const nodeToDelete = node.children[index];
+        const hasChildren = nodeToDelete.children && nodeToDelete.children.length > 0;
+        const hasRightBranch = !!nodeToDelete.rightBranch;
+        
+        if (hasChildren || hasRightBranch) {
+          nodeToDelete.name = "";
+          nodeToDelete.role = "";
+          nodeToDelete.head = "";
+          nodeToDelete.isInvisible = true;
+        } else {
+          node.children.splice(index, 1);
+        }
         return true;
       }
       for (const child of node.children) {
@@ -414,12 +536,59 @@ export default function App() {
     saveToFirebase(newOrgData);
   };
 
+  const handleNodePositionChange = (id: string, x: number, y: number) => {
+    saveHistory(orgData);
+    const newOrgData = JSON.parse(JSON.stringify(orgData));
+    
+    const updatePosition = (node: OrgNode, id: string): boolean => {
+      if (node.id === id) {
+        node.offsetX = x;
+        node.offsetY = y;
+        return true;
+      }
+      if (node.rightBranch && updatePosition(node.rightBranch, id)) return true;
+      if (!node.children) return false;
+      for (const child of node.children) {
+        if (updatePosition(child, id)) return true;
+      }
+      return false;
+    };
+    
+    updatePosition(newOrgData, id);
+    setOrgData(newOrgData);
+    saveToFirebase(newOrgData);
+  };
+
+  const handleEdgePositionChange = (id: string, x: number, y: number) => {
+    saveHistory(orgData);
+    const newOrgData = JSON.parse(JSON.stringify(orgData));
+    
+    const updateEdgePosition = (node: OrgNode, id: string): boolean => {
+      if (node.id === id) {
+        node.edgeX = x;
+        node.edgeY = y;
+        return true;
+      }
+      if (node.rightBranch && updateEdgePosition(node.rightBranch, id)) return true;
+      if (!node.children) return false;
+      for (const child of node.children) {
+        if (updateEdgePosition(child, id)) return true;
+      }
+      return false;
+    };
+    
+    updateEdgePosition(newOrgData, id);
+    setOrgData(newOrgData);
+    saveToFirebase(newOrgData);
+  };
+
   const handleNodeReorder = (nodeId: string, direction: 'left' | 'right') => {
     if (nodeId === orgData.id) return;
     saveHistory(orgData);
     const newOrgData = JSON.parse(JSON.stringify(orgData));
     
     const reorderNode = (node: OrgNode): boolean => {
+      if (node.rightBranch && reorderNode(node.rightBranch)) return true;
       if (!node.children) return false;
       const index = node.children.findIndex(c => c.id === nodeId);
       if (index !== -1) {
@@ -480,8 +649,7 @@ export default function App() {
           showToast(`성공적으로 ${parsedEmployees.length}명의 인원 명부를 저장했습니다.`, "success");
           setPastedData(''); // Clear textarea after success
         } catch (error) {
-          console.error("Error uploading directory:", error);
-          showToast("업로드 중 오류가 발생했습니다.", "error");
+          handleFirestoreError(error, OperationType.WRITE, 'directory/main');
         }
       },
       error: (error) => {
@@ -521,6 +689,10 @@ export default function App() {
 
   const findNodeById = (node: OrgNode, id: string): OrgNode | null => {
     if (node.id === id) return node;
+    if (node.rightBranch) {
+      const found = findNodeById(node.rightBranch, id);
+      if (found) return found;
+    }
     if (!node.children) return null;
     for (const child of node.children) {
       const found = findNodeById(child, id);
@@ -748,128 +920,124 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-auto p-8">
+        <div className={`flex-1 overflow-auto ${currentView === 'dashboard' ? 'p-0' : 'p-8'}`}>
           {currentView === 'dashboard' && (
-            <div className="space-y-6">
-              {/* Stats Row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="본부" value="6" icon={<Building2 className="text-blue-500" />} />
-                <StatCard title="실" value="25" icon={<Network className="text-purple-500" />} />
-                <StatCard title="팀" value="54" icon={<Users className="text-green-500" />} />
-              </div>
-
-              {/* Main Divisions Overview */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                <h2 className="text-lg font-semibold mb-4">주요 본부 현황</h2>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {orgData.children?.[0].children?.[0].children?.filter((c: OrgNode) => c.name.includes('본부')).map((div: OrgNode) => (
-                    <div key={div.id} className="border border-gray-100 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-bold text-blue-900">{div.name}</h3>
-                        <span className="text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded">{div.role} {div.head}</span>
-                      </div>
-                      <p className="text-sm text-gray-500 mb-3">하위 조직: {div.children?.length || 0}개 실/센터</p>
-                      <div className="flex flex-wrap gap-2">
-                        {div.children?.map((child: OrgNode) => (
-                          <span key={child.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                            {child.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <Dashboard employees={employees} />
           )}
 
           {currentView === 'orgchart' && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm min-h-full overflow-hidden relative">
-              <div className="absolute top-4 left-4 z-10 bg-white/90 p-4 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm">
-                <h3 className="font-bold text-gray-800 mb-2">개편일 : '26. 04. 01부</h3>
-                <table className="text-sm border-collapse border border-gray-300 text-center">
-                  <thead>
-                    <tr className="bg-[#1e4b82] text-white">
-                      <th className="border border-gray-300 px-3 py-1 font-medium">구 분</th>
-                      <th className="border border-gray-300 px-3 py-1 font-medium">변경전</th>
-                      <th className="border border-gray-300 px-3 py-1 font-medium">변경후</th>
-                      <th className="border border-gray-300 px-3 py-1 font-medium">차이</th>
-                      <th className="border border-gray-300 px-4 py-1 font-medium text-left">비고</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                    <tr>
-                      <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">본부</td>
-                      <td className="border border-gray-300 px-3 py-1">5</td>
-                      <td className="border border-gray-300 px-3 py-1">6</td>
-                      <td className="border border-gray-300 px-3 py-1">1</td>
-                      <td className="border border-gray-300 px-4 py-1 text-left font-medium">+1 품질본부 신설</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">실</td>
-                      <td className="border border-gray-300 px-3 py-1">24</td>
-                      <td className="border border-gray-300 px-3 py-1">25</td>
-                      <td className="border border-gray-300 px-3 py-1">1</td>
-                      <td className="border border-gray-300 px-4 py-1 text-left font-medium">+1 기획실 신설</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">팀</td>
-                      <td className="border border-gray-300 px-3 py-1">52</td>
-                      <td className="border border-gray-300 px-3 py-1">54</td>
-                      <td className="border border-gray-300 px-3 py-1">2</td>
-                      <td className="border border-gray-300 px-4 py-1 text-left font-medium">+2 미래전략팀, 통합구매팀 신설</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
               <OrgChartTree 
                 data={orgData} 
                 onNodeMove={handleNodeMove} 
                 onNodeEdit={handleNodeEdit} 
                 onNodeAdd={handleNodeAdd}
+                onNodeAddSibling={handleNodeAddSibling}
                 onNodeDelete={handleNodeDelete}
                 onNodeReorder={handleNodeReorder}
+                onNodePositionChange={handleNodePositionChange}
+                onNodeEdgePositionChange={handleEdgePositionChange}
                 onNodeClick={(id) => setSelectedNodeId(id)}
                 readOnly={userData?.role !== 'admin'}
-              />
-              
-              {/* Employee Modal */}
-              {selectedNode && (
-                <div className="absolute top-0 right-0 w-80 h-full bg-white border-l border-gray-200 shadow-xl flex flex-col z-50 animate-in slide-in-from-right">
-                  <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                    <h3 className="font-bold text-gray-900">{selectedNode.name} 인원</h3>
-                    <button onClick={() => setSelectedNodeId(null)} className="text-gray-500 hover:text-gray-700">
-                      <XCircle size={20} />
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4">
-                    {getSortedEmployees(selectedNode.name).length > 0 ? (
-                      <div className="space-y-3">
-                        {getSortedEmployees(selectedNode.name).map((emp, idx) => (
-                          <div key={idx} className="flex flex-col p-3 bg-white border border-gray-100 rounded-lg shadow-sm">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="font-bold text-gray-900">{emp.name}</span>
-                              {emp.role && (
-                                <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-medium">
-                                  {emp.role}
-                               </span>
-                              )}
-                            </div>
-                            <div className="text-sm text-gray-500 flex justify-between">
-                              <span>{emp.rank}</span>
-                              {emp.rankStep > 0 && <span>Step {emp.rankStep}</span>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center text-gray-500 mt-10">
-                        <Users size={32} className="mx-auto text-gray-300 mb-2" />
-                        <p>해당 조직에 등록된 인원이 없습니다.</p>
-                      </div>
-                    )}
-                  </div>
+              >
+                <div className="bg-white/90 p-4 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm">
+                  <h3 className="font-bold text-gray-800 mb-2">개편일 : '26. 04. 01부</h3>
+                  <table className="text-sm border-collapse border border-gray-300 text-center">
+                    <thead>
+                      <tr className="bg-[#1e4b82] text-white">
+                        <th className="border border-gray-300 px-3 py-1 font-medium">구 분</th>
+                        <th className="border border-gray-300 px-3 py-1 font-medium">변경전</th>
+                        <th className="border border-gray-300 px-3 py-1 font-medium">변경후</th>
+                        <th className="border border-gray-300 px-3 py-1 font-medium">차이</th>
+                        <th className="border border-gray-300 px-4 py-1 font-medium text-left">비고</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                      <tr>
+                        <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">본부</td>
+                        <td className="border border-gray-300 px-3 py-1">5</td>
+                        <td className="border border-gray-300 px-3 py-1">6</td>
+                        <td className="border border-gray-300 px-3 py-1">1</td>
+                        <td className="border border-gray-300 px-4 py-1 text-left font-medium">+1 품질본부 신설</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">실</td>
+                        <td className="border border-gray-300 px-3 py-1">24</td>
+                        <td className="border border-gray-300 px-3 py-1">25</td>
+                        <td className="border border-gray-300 px-3 py-1">1</td>
+                        <td className="border border-gray-300 px-4 py-1 text-left font-medium">+1 기획실 신설</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-300 px-3 py-1 font-medium bg-gray-100">팀</td>
+                        <td className="border border-gray-300 px-3 py-1">52</td>
+                        <td className="border border-gray-300 px-3 py-1">54</td>
+                        <td className="border border-gray-300 px-3 py-1">2</td>
+                        <td className="border border-gray-300 px-4 py-1 text-left font-medium">+2 미래전략팀, 통합구매팀 신설</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
+              </OrgChartTree>
+              
+              {/* Employee Bottom Sheet */}
+              {selectedNode && (
+                <>
+                  {/* Backdrop for outside click */}
+                  <div 
+                    className="absolute inset-0 z-40" 
+                    onClick={() => setSelectedNodeId(null)}
+                  />
+                  {/* Bottom Sheet Container */}
+                  <div className="absolute bottom-0 left-0 w-full h-[40%] bg-white/85 backdrop-blur-xl border-t border-gray-200/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col z-50 animate-in slide-in-from-bottom-full duration-300 rounded-t-3xl">
+                    {/* Drag Handle (Visual only) */}
+                    <div className="w-full flex justify-center pt-3 pb-1">
+                      <div className="w-12 h-1.5 bg-gray-300/80 rounded-full"></div>
+                    </div>
+                    
+                    <div className="px-6 pb-4 border-b border-gray-200/50 flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <Users className="text-blue-600" size={24} />
+                        <h3 className="text-lg font-bold text-gray-900">{selectedNode.name} 인원</h3>
+                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                          {getSortedEmployees(selectedNode.name).length}명
+                        </span>
+                      </div>
+                      <button onClick={() => setSelectedNodeId(null)} className="text-gray-400 hover:text-gray-700 transition-colors bg-gray-100/50 hover:bg-gray-200/50 p-1.5 rounded-full">
+                        <XCircle size={22} />
+                      </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-6">
+                      {getSortedEmployees(selectedNode.name).length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                          {getSortedEmployees(selectedNode.name).map((emp, idx) => (
+                            <div key={idx} className="flex flex-col p-4 bg-white/90 border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5">
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="font-bold text-gray-900 text-base">{emp.name}</span>
+                                {emp.role && (
+                                  <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-full font-medium">
+                                    {emp.role}
+                                 </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-500 flex justify-between mt-auto pt-2 border-t border-gray-50">
+                                <span className="font-medium">{emp.rank}</span>
+                                {emp.rankStep > 0 && <span>Step {emp.rankStep}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                          <div className="w-16 h-16 bg-gray-100/50 rounded-full flex items-center justify-center mb-3">
+                            <Users size={32} className="text-gray-400" />
+                          </div>
+                          <p className="text-base font-medium">해당 조직에 등록된 인원이 없습니다.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -928,8 +1096,7 @@ export default function App() {
                       setDefaultOrgData(orgData);
                       showToast("성공적으로 현재 조직도가 기본값으로 저장되었습니다.", "success");
                     } catch (error) {
-                      console.error("Error saving default org data:", error);
-                      showToast("기본값 저장 중 오류가 발생했습니다.", "error");
+                      handleFirestoreError(error, OperationType.WRITE, 'orgChart/default');
                     }
                   }}
                   className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
