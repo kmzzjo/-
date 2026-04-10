@@ -1,5 +1,38 @@
 @import "tailwindcss";
 
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-section, #print-section * {
+    visibility: visible;
+  }
+  #print-section {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100vw !important;
+    height: auto !important;
+    overflow: visible !important;
+    transform-origin: top left !important;
+    transform: scale(var(--print-scale, 1)) !important;
+  }
+  @page {
+    size: A3 landscape;
+    margin: 0;
+  }
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Remove vertical line above the root node */
+.org-tree ul.org-root > li::after,
+.org-tree ul.org-root > li::before {
+  display: none !important;
+}
+
 .org-tree ul {
   padding-top: 10px;
   position: relative;

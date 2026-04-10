@@ -69,12 +69,16 @@ service cloud.firestore {
         );
       allow update: if isAdmin();
       allow delete: if false;
+      
+      match /simulations/{simulationId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
     }
 
     match /orgChart/{documentId} {
       allow read: if isApproved();
-      allow create: if isApproved() && isValidOrgNode(request.resource.data);
-      allow update: if isApproved() && isValidOrgNode(request.resource.data);
+      allow create: if isAdmin() && isValidOrgNode(request.resource.data);
+      allow update: if isAdmin() && isValidOrgNode(request.resource.data);
       allow delete: if false;
     }
 

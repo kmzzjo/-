@@ -8,8 +8,9 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import Papa from 'papaparse';
 
 import { Dashboard } from './components/Dashboard';
+import { Simulation } from './components/Simulation';
 
-type ViewState = 'dashboard' | 'orgchart' | 'directory' | 'admin';
+type ViewState = 'dashboard' | 'orgchart' | 'directory' | 'admin' | 'simulation';
 
 export interface Employee {
   department: string;
@@ -758,7 +759,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
       {/* Sidebar */}
-      <aside className={`bg-white border-r border-gray-200 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'} flex flex-col`}>
+      <aside className={`bg-white border-r border-gray-200 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'} flex flex-col print:hidden`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
           {isSidebarOpen && <span className="font-bold text-lg text-blue-600 truncate">HR Dashboard</span>}
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">
@@ -781,7 +782,16 @@ export default function App() {
             onClick={() => setCurrentView('orgchart')}
             isOpen={isSidebarOpen}
           />
-          {userData?.role === 'admin' && (
+          {(userData?.role === 'admin' || userData?.role === 'hr_staff') && (
+            <NavItem 
+              icon={<Undo2 size={20} />} 
+              label="조직개편 시뮬레이션" 
+              isActive={currentView === 'simulation'} 
+              onClick={() => setCurrentView('simulation')}
+              isOpen={isSidebarOpen}
+            />
+          )}
+          {(userData?.role === 'admin' || userData?.role === 'hr_staff') && (
             <NavItem 
               icon={<Users size={20} />} 
               label="인원 명부" 
@@ -805,12 +815,13 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 print:hidden">
           <h1 className="text-xl font-semibold text-gray-800">
             {currentView === 'dashboard' && '대시보드 개요'}
             {currentView === 'orgchart' && '회사 조직도'}
             {currentView === 'directory' && '인원 명부 (준비중)'}
             {currentView === 'admin' && '관리자 설정'}
+            {currentView === 'simulation' && '조직개편 시뮬레이션'}
           </h1>
           
           <div className="flex items-center gap-4">
@@ -920,9 +931,13 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className={`flex-1 overflow-auto ${currentView === 'dashboard' ? 'p-0' : 'p-8'}`}>
+        <div className={`flex-1 overflow-auto print:p-0 print:overflow-visible ${currentView === 'dashboard' || currentView === 'simulation' ? 'p-0' : 'p-8'}`}>
           {currentView === 'dashboard' && (
             <Dashboard employees={employees} />
+          )}
+
+          {currentView === 'simulation' && (
+            <Simulation liveOrgData={orgData} />
           )}
 
           {currentView === 'orgchart' && (
@@ -1155,8 +1170,8 @@ export default function App() {
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">{u.email}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {u.email === user?.email ? (
-                            <span className={`px-2 py-1 text-xs rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
-                              {u.role === 'admin' ? '관리자' : (u.role === 'viewer' ? '열람자' : '대기중')}
+                            <span className={`px-2 py-1 text-xs rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : u.role === 'hr_staff' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                              {u.role === 'admin' ? '관리자' : (u.role === 'hr_staff' ? '인사팀' : (u.role === 'viewer' ? '열람자' : '대기중'))}
                             </span>
                           ) : (
                             <select
@@ -1167,6 +1182,7 @@ export default function App() {
                             >
                               <option value="pending" disabled>대기중</option>
                               <option value="viewer">열람자</option>
+                              <option value="hr_staff">인사팀</option>
                               <option value="admin">관리자</option>
                             </select>
                           )}

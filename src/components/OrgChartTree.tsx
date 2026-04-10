@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { OrgNode } from '../data/orgChart';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
+import { Download, Image as ImageIcon, FileText, Printer, ChevronDown } from 'lucide-react';
 
 interface NodeBoxProps {
   node: OrgNode;
@@ -311,8 +314,93 @@ export const OrgChartTree = ({
   children?: React.ReactNode
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+
+  const exportToPNG = async () => {
+    if (!chartRef.current) return;
+    try {
+      const dataUrl = await toPng(chartRef.current, { 
+        backgroundColor: '#ffffff',
+        pixelRatio: 2
+      });
+      const link = document.createElement('a');
+      link.download = 'org-chart.png';
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('Failed to export PNG:', error);
+    }
+    setIsExportMenuOpen(false);
+  };
+
+  const exportToPDF = async (format: 'a4' | 'a3') => {
+    if (!chartRef.current) return;
+    try {
+      const dataUrl = await toPng(chartRef.current, { 
+        backgroundColor: '#ffffff',
+        pixelRatio: 2
+      });
+      const pdf = new jsPDF({ orientation: 'landscape', format: format });
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      // Scale to fit if height exceeds page height
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let finalWidth = pdfWidth;
+      let finalHeight = pdfHeight;
+      
+      if (pdfHeight > pageHeight) {
+        finalHeight = pageHeight;
+        finalWidth = (imgProps.width * pageHeight) / imgProps.height;
+      }
+      
+      // Center horizontally if scaled down
+      const xOffset = (pdfWidth - finalWidth) / 2;
+      
+      pdf.addImage(dataUrl, 'PNG', xOffset, 0, finalWidth, finalHeight);
+      pdf.save(`org-chart-${format}.pdf`);
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+    }
+    setIsExportMenuOpen(false);
+  };
+
+  const handlePrint = (e?: React.MouseEvent | KeyboardEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('Print Button Clicked! Executing immediately.');
+    
+    // A3 가로 너비(약 420mm)를 픽셀로 환산 시 약 1587px. 여백 고려하여 1500px 기준.
+    if (chartRef.current) {
+      const contentWidth = chartRef.current.scrollWidth;
+      const a3Width = 1500;
+      const scale = contentWidth > a3Width ? a3Width / contentWidth : 1;
+      chartRef.current.style.setProperty('--print-scale', scale.toString());
+    }
+
+    window.print();
+    setIsExportMenuOpen(false);
+  };
 
   useEffect(() => {
+    // 전역 객체에 인쇄 함수 강제 등록
+    (window as any).forcePrint = handlePrint;
+    
+    // P 키 입력 시 인쇄
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+          return;
+        }
+        handlePrint(e);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    
     const ele = containerRef.current;
     if (!ele) return;
 
@@ -356,19 +444,60 @@ export const OrgChartTree = ({
 
     return () => {
       ele.removeEventListener('mousedown', mouseDownHandler);
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
   return (
-    <div ref={containerRef} className="org-tree overflow-auto w-full h-full bg-white p-8 cursor-grab active:cursor-grabbing relative">
-      <div className="min-w-max flex flex-col items-center">
+    <div ref={containerRef} className="org-tree overflow-auto w-full h-full bg-white p-8 cursor-grab active:cursor-grabbing relative print:overflow-visible print:p-0">
+      
+      {/* Export Dropdown */}
+      <div className="absolute top-4 right-4 z-50 print:hidden">
+        <div className="relative">
+          <button 
+            onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+            className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg shadow-sm font-medium transition-colors"
+          >
+            <Download size={18} />
+            내보내기
+            <ChevronDown size={16} className={`transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {isExportMenuOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50">
+              <button onClick={exportToPNG} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 text-left transition-colors">
+                <ImageIcon size={16} />
+                이미지로 저장 (PNG)
+              </button>
+              <button onClick={() => exportToPDF('a4')} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 text-left transition-colors border-t border-gray-100">
+                <FileText size={16} />
+                PDF로 저장 (A4 가로)
+              </button>
+              <button onClick={() => exportToPDF('a3')} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 text-left transition-colors border-t border-gray-100">
+                <FileText size={16} />
+                PDF로 저장 (A3 가로)
+              </button>
+              <button 
+                type="button"
+                onClick={handlePrint}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 text-left transition-colors border-t border-gray-100"
+              >
+                <Printer size={16} />
+                인쇄하기 (Print)
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div id="print-section" ref={chartRef} className="min-w-max flex flex-col items-center bg-white p-4 print:p-0">
         {children && (
           <div className="self-start mb-8 cursor-auto" onMouseDown={(e) => e.stopPropagation()}>
             {children}
           </div>
         )}
         <div className="flex justify-center">
-          <ul>
+          <ul className="org-root">
           <TreeNode node={data} onMove={onNodeMove} onEdit={onNodeEdit} onAdd={onNodeAdd} onAddSibling={onNodeAddSibling} onDelete={onNodeDelete} onReorder={onNodeReorder} onClick={onNodeClick} readOnly={readOnly} />
         </ul>
       </div>
